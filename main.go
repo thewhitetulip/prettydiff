@@ -88,8 +88,9 @@ func main() {
 	}
 
 	cmd = exec.Command("git", "diff")
+
 	// open the out file for writing
-	outfile, err := os.Create("./diff.txt")
+	outfile, err := os.Create("/tmp/diff.txt")
 	if err != nil {
 		panic(err)
 	}
@@ -98,11 +99,14 @@ func main() {
 
 	err = cmd.Run()
 	if err != nil {
-		panic(err)
+		if err.Error() == "exit status 129" {
+			fmt.Println("Not a git repository")
+			os.Exit(1)
+		}
 	}
-	//cmd.Wait()
+	cmd.Wait()
 
-	file, err := ioutil.ReadFile("./diff.txt")
+	file, err := ioutil.ReadFile("/tmp/diff.txt")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -112,6 +116,11 @@ func main() {
 	}
 	strFile := string(file)
 	lines := strings.Split(strFile, "\n")
+
+	if strFile == "" {
+		fmt.Println("No diff to show")
+		os.Exit(0)
+	}
 
 	if len(lines) > 0 {
 		io.WriteString(htmlFile, basehtml)
@@ -146,6 +155,7 @@ func analyzeLines(lines []string, htmlFile *os.File, lower int) {
 		var name string
 		line = strings.Replace(line, "<", "&lt;", -1)
 		line = strings.Replace(line, ">", "&gt;", -1)
+		line = strings.Replace(line, "&", "&amp;", -1)
 
 		if strings.HasPrefix(line, "-") {
 			line = "\n<pre class='delete'>" + line + "</pre>"
