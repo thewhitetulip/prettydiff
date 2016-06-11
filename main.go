@@ -108,11 +108,12 @@ func main() {
 
 	file, err := ioutil.ReadFile("/tmp/diff.txt")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Please check if you have access to /tmp folder")
+		os.Exit(1)
 	}
 	htmlFile, err := os.OpenFile("/tmp/diff.html", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0777)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Please check if you have access to /tmp folder")
 	}
 	strFile := string(file)
 	lines := strings.Split(strFile, "\n")
