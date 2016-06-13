@@ -1,5 +1,10 @@
 package main
 
+/*
+This program runs git diff, gets the output and creates a coloured html page in the location /tmp/diff.html and opens it in your browser.
+Will not work with Windows since it doesn't have a /tmp directory, but might work if you have cygwin installed, which probably has it's own /tmp directory. Please send a PR if you figure out how to make this work in Windows.
+*/
+
 import (
 	"fmt"
 	"io"
@@ -78,21 +83,47 @@ const basehtml = `<!doctype html>
 <body>
 <div id="wrapper">`
 
+const (
+	helpMessage           = "prettyprint:\nWill print the git diff output in a visual way in your browser.\nIf no parameter is provided, it shows output of git diff, otherwise it shows the git diff at that commit ID.\nUsage: \n\tprettydiff\n\tprettydiff 53aa6b98860f8e2a610d003a63b586e67396b003"
+	tmpDirErrMsg          = "Do not have access to the /tmp directory"
+	noDiffsErrMsg         = "No diff to show"
+	noGitRepoErrMsg       = "Not a git repository"
+	invalidCommitIDErrMsg = "Please provide valid commit ID"
+	tmpFilePath           = "/tmp/diff.txt"
+	tmpHTMLPath           = "/tmp/diff.html"
+)
+
 func main() {
-	var index []int
+	var index []int //stores the line number of each diff block
 	var cmd *exec.Cmd
 
-	if len(os.Args) > 1 {
-		diffID := os.Args[1]
-		cmd = exec.Command("git", "diff", diffID)
+	switch len(os.Args) {
+	//the first commandline arg is the program name
+	case 1:
+		cmd = exec.Command("git", "diff")
+	//only two arguments are supported, -h and the commit ID
+	case 2:
+		diffArg := os.Args[1]
+
+		if diffArg == "-h" {
+			fmt.Println(helpMessage)
+			os.Exit(0)
+		} else {
+			//length of valid commit ID is 40,
+			if len(diffArg) == 40 {
+				cmd = exec.Command("git", "diff", diffArg)
+			} else {
+				fmt.Println(invalidCommitIDErrMsg)
+				os.Exit(1)
+			}
+		}
 	}
 
-	cmd = exec.Command("git", "diff")
-
 	// open the out file for writing
-	outfile, err := os.Create("/tmp/diff.txt")
+	outfile, err := os.Create(tmpFilePath)
 	if err != nil {
-		panic(err)
+		fmt.Println(tmpDirErrMsg)
+		os.Exit(1)
 	}
 	defer outfile.Close()
 	cmd.Stdout = outfile
@@ -100,56 +131,60 @@ func main() {
 	err = cmd.Run()
 	if err != nil {
 		if err.Error() == "exit status 129" {
-			fmt.Println("Not a git repository")
+			fmt.Println(noGitRepoErrMsg)
 			os.Exit(1)
 		}
 	}
 	cmd.Wait()
 
-	file, err := ioutil.ReadFile("/tmp/diff.txt")
+	file, err := ioutil.ReadFile(tmpFilePath)
 	if err != nil {
-		fmt.Println("Please check if you have access to /tmp folder")
+		fmt.Println(tmpDirErrMsg)
 		os.Exit(1)
 	}
-	htmlFile, err := os.OpenFile("/tmp/diff.html", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0777)
+	htmlFile, err := os.OpenFile(tmpHTMLPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0777)
 	if err != nil {
-		fmt.Println("Please check if you have access to /tmp folder")
+		fmt.Println(tmpDirErrMsg)
 	}
 	strFile := string(file)
 	lines := strings.Split(strFile, "\n")
 
+	//will be displayed when prettydiff is run on git repository where no diffs are present
 	if strFile == "" {
-		fmt.Println("No diff to show")
+		fmt.Println(noDiffsErrMsg)
 		os.Exit(0)
 	}
 
+	//write the base to the html page, the static part.
 	if len(lines) > 0 {
 		io.WriteString(htmlFile, basehtml)
 	}
 
-	for i := 0; i < len(lines); i++ {
-		a := strings.Split(lines[i], " ")[0]
-		if a == "diff" {
-			index = append(index, i)
+	//find out the indices where the new git block start
+	for key, line := range lines {
+		if strings.HasPrefix(line, "diff") {
+			index = append(index, key)
 		}
 	}
-	var lower, higher int
-	for i := 0; i < len(index); i++ {
-		lower = index[i]
 
-		if i == len(index)-1 {
+	var lower, higher int
+	for key, value := range index {
+		lower = value
+		//The last index is from last value of index to the last line in the diff.txt file
+		if key == len(index)-1 {
 			higher = len(lines) - 1
 		} else {
-			higher = index[i+1]
+			higher = index[key+1]
 		}
 		analyzeLines(lines[lower:higher], htmlFile, lower)
 	}
 
 	htmlFile.WriteString("</div></div></body>")
 
-	open.Start("/tmp/diff.html")
+	open.Start(tmpHTMLPath)
 }
 
+//analyzeLines takes a slice of a section of a diff and creates one block
 func analyzeLines(lines []string, htmlFile *os.File, lower int) {
 	for _, line := range lines {
 		//escape HTML if any
